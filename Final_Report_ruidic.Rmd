@@ -1,0 +1,394 @@
+---
+title: "Final Project"
+author: "Ruidi Chang (ID: ruidic)"
+date: 'Completed: 2022/12/14'
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    theme: paper
+    highlight: tango
+---
+
+```{r load libraries, message = FALSE, warning=FALSE}
+library(tidyverse)
+library(data.table)
+library(modelsummary)
+library(ggplot2)
+library(ggpubr)
+library(plotly)
+library(reshape2)
+library(plyr)
+set.seed(1)
+```
+<font size="3" color="black">
+
+## Crime Data from 2020 to Present in the City of Los Angele
+
+
+This dataset reflects incidents of crime in the City of Los Angeles dating back to 2020. I am curious what is the pattern of crimes in LA. For example, which crime type happens most frequently? Is there any difference of crimes in different area? How can we predict crime type and what attributes are related to crime type?
+
+This project will answer these questions and hopefully could give you some insight into LA's criminal record.
+
+Source of dataset: https://data.lacity.org/Public-Safety/Crime-Data-from-2020-to-Present/2nrs-mtv8
+
+
+The variables that I extracted are listed below.
+
+
+```{r define the data set}
+Crime <- read.csv("Crime_Data_from_2020_to_Present.csv", stringsAsFactors=TRUE)
+str(Crime)
+dim(Crime)
+```
+From the structure we can know that there are 28 variables with 623,105 rows. They are all integers or strings.
+
+The descriptions for the variables:
+
+1. DR_NO: Division of Records Number: Official file number made up of a 2 digit year, area ID, and 5 digits (Unique identifier for each crime in this dataset)
+
+2. Date Rptd: Reported Date: MM/DD/YYYY
+
+3. DATE OCC: Occurred Date: MM/DD/YYYY
+
+4. TIME OCC: Occurred Time: In 24 hour military time.
+
+5. AREA: The LAPD has 21 Community Police Stations referred to as Geographic Areas within the department. These Geographic Areas are sequentially numbered from 1-21.
+
+6. AREA NAME: The 21 Geographic Areas or Patrol Divisions are also given a name designation that references a landmark or the surrounding community that it is responsible for. For example 77th Street Division is located at the intersection of South Broadway and 77th Street, serving neighborhoods in South Los Angeles.
+
+7. Rpt Dist No: A four-digit code that represents a sub-area within a Geographic Area. All crime records reference the "RD" that it occurred in for statistical comparisons. Find LAPD Reporting Districts on the LA City GeoHub at http://geohub.lacity.org/datasets/c4f83909b81d4786aa8ba8a74a4b4db1_4
+
+8. Part 1-2
+
+9. Crm Cd: Indicates the crime committed. (Same as Crime Code 1)
+
+10. Crm Cd Desc: Defines the Crime Code provided.
+
+11. Mocodes: Modus Operandi: Activities associated with the suspect in commission of the crime.See attached PDF for list of MO Codes in numerical order. https://data.lacity.org/api/views/y8tr-7khq/files/3a967fbd-f210-4857-bc52-60230efe256c?download=true&filename=MO%20CODES%20(numerical%20order).pdf
+
+12. Vict Age: Two character numeric
+
+13. Vict Sex: F - Female M - Male X - Unknown
+
+14. Vict Descent: Descent Code: A - Other Asian B - Black C - Chinese D - Cambodian F - Filipino G - Guamanian H - Hispanic/Latin/Mexican I - American Indian/Alaskan Native J - Japanese K - Korean L - Laotian O - Other P - Pacific Islander S - Samoan U - Hawaiian V - Vietnamese W - White X - Unknown Z - Asian Indian
+
+15. Premis Cd: The type of structure, vehicle, or location where the crime took place.
+
+16. Premis Desc: Defines the Premise Code provided.
+
+17. Weapon Used Cd: The type of weapon used in the crime.
+
+18. Weapon Desc: Defines the Weapon Used Code provided.
+
+19. Status: Status of the case. (IC is the default)
+
+20. Status Desc: Defines the Status Code provided.
+
+21. Crm Cd 1: Indicates the crime committed. Crime Code 1 is the primary and most serious one. Crime Code 2, 3, and 4 are respectively less serious offenses. Lower crime class numbers are more serious.
+
+22. Crm Cd 2: May contain a code for an additional crime, less serious than Crime Code 1.
+
+23. Crm Cd 3: May contain a code for an additional crime, less serious than Crime Code 1.
+
+24. Crm Cd 4: May contain a code for an additional crime, less serious than Crime Code 1.
+
+25. LOCATION: Street address of crime incident rounded to the nearest hundred block to maintain anonymity.
+
+26. Cross Street: Cross Street of rounded Address
+
+27. LAT: Latitude
+
+28. LON: Longtitude
+
+
+## Data Cleaning and Overview
+
+```{r check the nulls}
+# Have a general view of the data and check the nulls
+summary(Crime)
+sum(is.na(Crime))
+```
+
+Most of "na" occurs in "Crm.Cd.1","Crm.Cd.2", "Crm.Cd.3" and "Crm.Cd.4". In this project, Crm.cd is enough, so I decide to remove this column.
+
+```{r drop some columns}
+drop <- c("Crm.Cd.1","Crm.Cd.2", "Crm.Cd.3", "Crm.Cd.4")
+Crime <- Crime[,!(names(Crime) %in% drop)]
+Crime <- subset(Crime, Vict.Sex != "")
+Crime <- subset(Crime, Vict.Sex != " ")
+Crime <- subset(Crime, Vict.Descent != "")
+Crime <- subset(Crime, Vict.Age != -1)
+Crime <- subset(Crime, Vict.Age != 0.00)
+summary(Crime)
+sum(is.na(Crime))
+```
+Now there's much less null in this data
+
+## Exploratory Data Analysis
+
+### 1. General statistical information about the data
+
+```{r basic statistics}
+datasummary_skim(Crime) # A general charts to see some statistic results of the data
+```
+
+From this chart, we can see how these features spread out from the standard deviation and small histograms on the right. 
+
+The standard deviation for Vict.age is huge (15.5), so it is widely spread. The mean value (39.6) is similar with its median value (37), meaning that it's kind of normal distribution, with a bit right skewed. The mini histogram shows the same thing.
+
+From the mini histogram of TIME.OCC, we can could that the crime is almost happen in uniform distribution. Afternoon and night is a bit more than morning.
+
+From the histogram of AREA, we can see that there is a significantly high number of crimes in one area. The following analysis will tell us which one (Central).
+
+From the histogram of Crm.Cd, we can see that there is a significantly high number of crimes in some crime type. The following analysis will tell us what are they.
+
+
+
+### 2. Grouping the data by race
+
+After having a general view of the dataset, we can take a look at the variables in the groups that we are interested in. 
+
+Data summary for crimes happened in different Area:
+
+```{r number of crimes by statistics for area}
+sort(table(Crime$AREA.NAME), decreasing = T) # number of crimes by the AREA name.
+```
+
+Central Area has most crimes and Hollenbeck has least.
+
+Data summary for crimes happened in Central Area:
+
+```{r number of crimes for Central area}
+Central <- subset(Crime, AREA.NAME == "Central")
+head(sort(table(Central$Crm.Cd.Desc), decreasing = T)) # 6 most frequently crime type in Central
+```
+
+Burglary occurs most often in Central Area.
+
+Data summary for crimes happened in Hollenbeck Area:
+
+```{r number of crimes for Hollenbeck area}
+Hollenbeck <- subset(Crime, AREA.NAME == "Hollenbeck")
+head(sort(table(Hollenbeck$Crm.Cd.Desc), decreasing = T)) # 6 most frequently crime type in Hollenbeck
+```
+
+Battery occurs most often in Hollenbeck Area.
+
+Data summary for victim age:
+
+```{r number of victims by age}
+sort(table(Crime$Vict.Age), decreasing =T) # Victim age.
+```
+
+Most Victims are in 20s or 30s.
+
+Data summary for victim sex:
+
+```{r number of victims by sex}
+table(Crime$Vict.Sex) # Victim sex.
+```
+
+Victims sex has no obvious bias.
+
+Data summary for victim descent:
+
+```{r number of victims by race}
+sort(table(Crime$Vict.Descent), decreasing =T) # Victim race.
+```
+
+Most victims are Hispanic/Latin/Mexican.
+
+Data summary for crimes tpye:
+
+```{r number of different crimes types}
+head(sort(table(Crime$Crm.Cd.Desc), decreasing =T)) # 6 most frequency crime type.
+```
+
+Battery, burglary and theft is the top 3 most frequency crime type.
+
+Cross tabulation by area and victim sex:
+
+```{r cross tabulation by area and victim sex}
+table(Crime$AREA.NAME, Crime$Vict.Sex) # cross tabulation by area and victim sex
+```
+
+In 77th Street and Southeast, female victims is much more than male. In Central, male victims is much more than female. For other areas, there is no significant different.
+
+## Graphical Exploratory Data Analysis
+
+### Graphical Exploratory Data Analysis - Victim
+#### 1. The bar plot in victims
+
+```{r barplot, warning=FALSE}
+barplot(table(Crime$Vict.Descent), 
+        main = 'Barchart of descent',
+        col = 'red')
+barplot(table(Crime$Vict.Age), 
+        main = 'Barchart of age',
+        col = 'red')
+barplot(table(Crime$Vict.Sex), 
+        main = 'Barchart of sex',
+        col = 'red')
+```
+
+We get four results from the charts:
+
+1. It seems that Hispanic/Latin/Mexican, White and Black encountered crime most. This is because the population of this races is higher than other.
+
+2. It seems that middle aged people encountered crime most.
+
+3. There seems to be no significant difference between the male and female.
+
+#### 2. Checking the distributions
+To make sure that the two groups are similarly distributed in their exogenous features (i.e. age), we can make some plots to specifically see the distribution
+
+```{r distribution of age}
+# Source for this part: https://www.r-graph-gallery.com/135-stacked-density-graph.html
+age_distr <- ggplot(Crime, aes(x=Vict.Age, group=Vict.Descent, fill=Vict.Descent), scale= 2) + geom_density(adjust=1.5, alpha=.4) + ggtitle('Distribution of age among races') + ylab("Age density")
+age_distr
+```
+<br>
+It seems that the age among races is distributed similarly for most races. However, for Asian Indian, there are two peaks at about 20 years old and 35 years old. All the age is right-skewed.
+
+```{r distribution of gender}
+gender_distr <- ggplot(Crime, aes(x=Vict.Descent, fill=Vict.Sex)) + geom_bar() + ggtitle('Distribution of gender among races') + ylab("Gender density")
+gender_distr
+```
+<br>
+It seems that the gender among races is distributed similarly because they are all half-to-half.
+
+We can think that among the races, gender and age are distributed similarly. So we can think that the exogenous features are not different between these two groups.
+
+#### 3. The box plot in victims
+```{r boxplot, warning=FALSE}
+Crime_area_vict <- aggregate(x = Crime$DR_NO, by = list(Crime$AREA.NAME, Crime$Vict.Descent, Crime$Vict.Sex), length)
+colnames(Crime_area_vict) <- c("Area", "Descent", "Sex", "Number.Crime")
+box_area <- ggplot(Crime_area_vict, aes(x=Area, y=Number.Crime, fill=Area)) + geom_boxplot() + ggtitle('Area boxplot')
+box_area
+box_race <- ggplot(Crime_area_vict, aes(x=Descent, y=Number.Crime, fill=Descent)) + geom_boxplot() + ggtitle('Descent boxplot')
+box_race
+box_sex <- ggplot(Crime_area_vict, aes(x=Sex, y=Number.Crime, fill=Sex)) + geom_boxplot() + ggtitle('Sex boxplot')
+box_sex
+```
+### Graphical Exploratory Data Analysis - Crime Type
+#### 1. The bar plot in crime type of differnt races
+
+```{r boxplot crime type, warning=FALSE}
+barplot(table(Crime$Crm.Cd.Desc), 
+        main = 'Barchart of descent',
+        col = 'red')
+```
+Battery, burglary and theft is the top 3 most frequency crime type.
+
+#### 2. Checking the distributions
+```{r distribution of areas}
+type_distr <- ggplot(Crime, aes(x=Crm.Cd, group=AREA, fill=AREA), scale= 2) + geom_density(adjust=1.5, alpha=.4) + ggtitle('Distribution of crime type among areas') + ylab("Crime density")
+type_distr
+```
+
+The crime type in different areas is similar.
+
+```{r distribution of race}
+type_race_distr <- ggplot(Crime, aes(x=Crm.Cd, group=Vict.Descent, fill=Vict.Descent), scale= 2) + geom_density(adjust=1.5, alpha=.4) + ggtitle('Distribution of crime type among races') + ylab("Crime density")
+type_race_distr
+```
+
+The distributions of crime type in different races are similar. However, races like Samoan has higher kurtosis.
+
+## Deeper Analysis
+
+### 1. Statistical comparing
+We have observed some potential differences in crime type. However, some statistical methods are still needed to make what we saw more convincing.
+
+Firstly, we can compare their crime type in different sex.
+
+```{r t-test Crime type}
+female <- Crime$Crm.Cd[Crime$Vict.Sex == "F"]
+male <- Crime$Crm.Cd[Crime$Vict.Sex == "M"]
+t.test(female, male, conf.level = 0.95)
+```
+Unlike what we infer in the graphing part, the crime type difference between the female and male is statistically significant because the p-vale < 0.05. 
+
+However, it still needs to be tested later by statistical models like Linear Regressions.
+
+### 2. Regressions
+
+#### Simple Linear Regression for income:
+
+Although the result for 2 variables simple linear regression should be similar to the t-test, we can still generate a linear regression model and observe its coefficients to give us some basic ideas.
+
+```{r t-test Simple linear regression}
+Crime_subsex <- subset(Crime, Vict.Sex == "F" | Vict.Sex == "M")
+Crime_lm1 <- lm(Crm.Cd ~ Vict.Sex, data = Crime_subsex)
+summary(Crime_lm1)
+plot(x=Crime_subsex$Vict.Sex, y=Crime_subsex$Crm.Cd, xlab='Vict.Sex', ylab='Crm.Cd', main='Regression: Crime Type ~ Sex') 
+```
+
+The result above still tells us that crime type for different sex is statistically significant.
+
+
+#### Longer Linear Regression for crime type:
+
+Now we can try to add more variables.
+
+Before that, we need to check the correlation between the variables to reduce the effect of multi-collinearity.
+
+```{r Correlation Heatmap}
+# Source for this part: http://www.sthda.com/english/wiki/ggplot2-quick-correlation-matrix-heatmap-r-software-and-data-visualization
+Crime$Vict.Sex <- revalue(Crime$Vict.Sex, c("F"=0,"M"=1,"H"=2,"X"=3))
+Crime$Vict.Descent <- revalue(Crime$Vict.Descent, c("A"=0,"B"=1,"C"=2,"D"=3,"F"=4,"G"=5,"H"=6,"I"=7,"J"=8,"K"=9,"L"=10,"O"=11,"P"=12,"S"=13,"U"=14,"V"=15,"W"=16,"X"=17,"Z"=18))
+Crime$Vict.Descent <- as.numeric(Crime$Vict.Descent)  
+Crime$Vict.Sex <- as.numeric(Crime$Vict.Sex)  
+Crime_x <- Crime[, c(4,5,7,12,13,14,15,17,23,24)]
+corr <- round(cor(Crime_x), 2)
+melted_corr <- melt(corr)
+heatmap <- ggplot(data = melted_corr, aes(x=Var1, y=Var2, fill=value)) + geom_tile() + theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) + ggtitle('Heatmap for variables')
+heatmap
+```
+
+From the heatmap, Victim Sex are very correlated to Prmise Code. So, here we can drop Premis.Cd. Also, in the regression for Crm.Cd, we don't include the other three measurement variables.
+
+```{r Longer linear regression}
+Crime_lm2 <- lm(Crm.Cd ~ 
+                   TIME.OCC 
+                 + AREA
+                 + Rpt.Dist.No 
+                 + Vict.Age
+                 + Vict.Sex
+                 + Vict.Descent 
+                 + Weapon.Used.Cd 
+                 + LAT
+                 + LON,
+                 data = Crime)
+summary(Crime_lm2)
+```
+From the above Linear Regression, we can see that the effect of Area and Rpt.Dist.No on Crm.Cd is not statistically significant. Now it’s more likely that area has no causal effect on crime type.
+
+Let remove this two varibles.
+```{r Final linear regression}
+Crime_lm3 <- lm(Crm.Cd ~ 
+                   TIME.OCC 
+                 + Vict.Age
+                 + Vict.Sex
+                 + Vict.Descent 
+                 + Weapon.Used.Cd 
+                 + LAT
+                 + LON,
+                 data = Crime)
+summary(Crime_lm3)
+```
+
+The attributes related to victims(age, sex, race) has effect on crime type. The crime occurrence time and weapon usage also have effect on crime type.
+
+## Conclusion
+
+To answer the questions I mentioned at the begining of this project.
+
+Battery, burglary and theft is the top 3 most frequency crime type. The distribution of crime types in different areas is similar, but each area has its most frequent crime type. For example, Burglary occurs most often in Central Area and Battery occurs most often in Hollenbeck Area. In 77th Street and Southeast, female victims is much more than male. In Central, male victims is much more than female. For other areas, there is no significant different.
+
+From t-test, we conclude that the crime type difference between the female and male is statistically significant.
+
+To predict crime type, crime occurrence time, victim, weapons and locations are good attributes. 
+
+</font>
